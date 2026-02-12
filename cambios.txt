@@ -1,0 +1,64 @@
+Pipeline del último modelo (Ensemble + Optuna)
+                                                                                                                                    
+  1. Datos de entrada
+                                                                                                                                                                                                  
+  Partimos de train_full con 61 features y 9319 filas, construido combinando:
+                                                                                                                                                                                                  
+  - Water Quality (3 cols): Total Alkalinity, Electrical Conductance, Dissolved Reactive Phosphorus (targets)
+  - Landsat (6 cols): nir, green, swir16, swir22, NDMI, MNDWI (bandas espectrales satelitales)
+  - TerraClimate (1 col): pet (evapotranspiración potencial)
+  - Climate (10 cols): precip_30d, precip_mean, precip_max, precip_days, temp_mean, temp_max, temp_min, temp_range, et0_mean, et0_sum
+  - Geográficas (7 cols): lat_norm, lon_norm, dist_ocean_km, elevation_m (SRTM real), basin, basin_area_km2, basin_runoff_mm
+  - Índices espectrales (10 cols): turbidity_idx, salinity_idx, conductivity_proxy, hardness_proxy, ionic_sum_proxy, NDSI, y 4 ratios de bandas
+  - Ratios climáticos (5 cols): aridity_idx, et0_precip_ratio, water_excess, temp_range_norm, temp_precip_interaction
+  - Encoding cíclico (6 cols): month_sin/cos, doy_sin/cos, season_sin/cos
+  - SoilGrids ISRIC (6 cols): soil_clay, soil_sand, soil_silt, soil_phh2o, soil_soc, soil_bdod
+  - Basin dummies (9 cols): one-hot encoding de las 9 cuencas hidrográficas
+
+  2. Preprocesamiento
+
+  - Se imputaron NaNs (19 filas de Landsat en validación, ~1085 en training) con la mediana del training
+  - Se alinearon las columnas de validación con las de training
+
+  3. Modelo: Ensemble de 3 algoritmos
+
+  Para cada una de las 3 targets por separado:
+
+  - LightGBM: Gradient boosting optimizado para velocidad, maneja bien features categóricas
+  - XGBoost: Gradient boosting robusto, buen regularización
+  - RandomForest: Modelo de bagging, más estable, menos propenso a overfitting
+
+  La predicción final es un promedio ponderado:
+  pred = w_lgb × pred_lgb + w_xgb × pred_xgb + w_rf × pred_rf
+
+  4. Optuna: Optimización de hiperparámetros
+
+  Para cada target, Optuna corrió 60 trials buscando los mejores:
+
+  Por modelo (~8 hiperparámetros cada uno):
+  - n_estimators (cantidad de árboles)
+  - max_depth (profundidad máxima)
+  - learning_rate (tasa de aprendizaje, solo LGB/XGB)
+  - subsample, colsample_bytree (muestreo de filas/columnas)
+  - reg_alpha, reg_lambda (regularización L1/L2)
+  - Otros específicos de cada modelo
+
+  + 3 pesos del ensemble:
+  - w_lgb, w_xgb, w_rf (sumando 1.0)
+
+  Cada trial evaluó con 5-fold cross-validation midiendo R², y Optuna usó el sampler TPE (Tree-structured Parzen Estimator) para buscar inteligentemente las mejores combinaciones.
+
+  5. Resultados
+  ┌───────────────────────────────┬────────┬─────┬─────┬─────┐
+  │            Target             │ R² CV  │ LGB │ XGB │ RF  │
+  ├───────────────────────────────┼────────┼─────┼─────┼─────┤
+  │ Total Alkalinity              │ 0.8685 │ 29% │ 41% │ 30% │
+  ├───────────────────────────────┼────────┼─────┼─────┼─────┤
+  │ Electrical Conductance        │ 0.8751 │ 19% │ 50% │ 31% │
+  ├───────────────────────────────┼────────┼─────┼─────┼─────┤
+  │ Dissolved Reactive Phosphorus │ 0.7129 │ 12% │ 74% │ 14% │
+  └───────────────────────────────┴────────┴─────┴─────┴─────┘
+  6. Submission
+
+  Con los mejores hiperparámetros, se re-entrenaron los 3 modelos con todo el training (sin split) y se predijeron las 200 filas de validación con el ensemble ponderado. Resultado guardado en
+  submissions/submission_ensemble_optuna.csv.
