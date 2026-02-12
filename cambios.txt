@@ -62,3 +62,13 @@ Pipeline del último modelo (Ensemble + Optuna)
 
   Con los mejores hiperparámetros, se re-entrenaron los 3 modelos con todo el training (sin split) y se predijeron las 200 filas de validación con el ensemble ponderado. Resultado guardado en
   submissions/submission_ensemble_optuna.csv.
+
+    Qué hacer para mejorar
+
+  1. Volvé al modelo simple de RF con 34 features como baseline
+  2. Selección de features: usá feature_importance o permutation_importance para quedarte solo con las top 15-20 features que realmente aportan
+  3. Si querés ensemble: usá los mismos features simples, no agregues las derivadas redundantes
+  4. Para DRP: considerá tratarlo con un modelo separado con features distintas, ya que tiene un comportamiento muy diferente
+
+  En resumen: más features ≠ mejor modelo. El modelo anterior era más simple y generalizaba mejor. La mejora en CV era una ilusión: el modelo estaba memorizando patrones del training que no
+  existen en el test.
