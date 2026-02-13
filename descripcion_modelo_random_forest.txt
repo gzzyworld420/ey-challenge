@@ -1,0 +1,113 @@
+DESCRIPCION DEL MODELO - RANDOM FOREST REGRESSOR
+==================================================
+
+Objetivo:
+Predecir tres variables de calidad de agua en Sudafrica:
+  - Total Alkalinity
+  - Electrical Conductance
+  - Dissolved Reactive Phosphorus
+
+
+1. CARGA Y PREPARACION DE DATOS
+--------------------------------
+Se cargaron y unieron cuatro datasets por indice/fila:
+  - water_quality_training_dataset.csv (Lat, Lon, fecha + targets)
+  - landsat_features_training.csv (indices satelitales)
+  - terraclimate_features_training.csv (pet)
+  - train_climate_data.csv (variables climaticas)
+
+El dataset resultante (train_full) tiene 9319 filas.
+
+
+2. INGENIERIA DE FEATURES
+--------------------------
+Se crearon features adicionales a partir de los datos base:
+
+a) Posicion relativa en Sudafrica:
+   - lat_norm, lon_norm: Latitud y longitud normalizadas al bounding box de Sudafrica.
+
+b) Distancia al oceano:
+   - dist_ocean_km: Distancia haversine al punto costero mas cercano (calculado con una lista de
+     coordenadas de la costa sudafricana).
+
+c) Elevacion:
+   - elevation_m: Altitud obtenida via API de Open-Elevation.
+
+d) Cuenca hidrografica:
+   - basin: Cuenca asignada a cada punto.
+   - basin_area_km2, basin_runoff_mm: Area de la cuenca y escorrentia.
+   - basin_*: Variables dummy (one-hot encoding) para las 9 cuencas:
+     Berg_Olifants_WC, Breede_Gouritz, Inkomati_Usuthu, Limpopo,
+     Mzimvubu_Tsitsikamma, Olifants_N, Orange, Pongola_Mtamvuna, Vaal.
+
+Features finales utilizadas (34 en total):
+  Latitude, Longitude, nir, green, swir16, swir22, NDMI, MNDWI, pet,
+  precip_30d, precip_mean, precip_max, precip_days, temp_mean, temp_max,
+  temp_min, temp_range, et0_mean, et0_sum, lat_norm, lon_norm,
+  dist_ocean_km, elevation_m, basin_area_km2, basin_runoff_mm,
+  + 9 dummies de basin.
+
+
+3. BUSQUEDA DE HIPERPARAMETROS (GridSearchCV)
+----------------------------------------------
+Se entreno un RandomForestRegressor con GridSearchCV para optimizar hiperparametros,
+usando solo la variable target "Total Alkalinity" como referencia.
+
+Split: 80% train (7455 filas) / 20% test (1864 filas), random_state=42.
+
+Grilla de hiperparametros explorada:
+  - n_estimators: [100, 300, 500]
+  - max_depth: [10, 20, 30, None]
+  - min_samples_split: [2, 5, 10]
+  - min_samples_leaf: [1, 2, 4]
+  - max_features: ['sqrt', 0.5, 0.8]
+
+Total de combinaciones evaluadas: 324 candidatos x 5 folds = 1620 fits.
+
+Mejores hiperparametros encontrados:
+  - n_estimators: 300
+  - max_depth: 20
+  - max_features: 0.5
+  - min_samples_leaf: 2
+  - min_samples_split: 2
+
+Resultados para Total Alkalinity:
+  - R2 Cross-Validation (5-fold): 0.8528
+  - R2 Test (hold-out 20%):       0.8468
+
+
+4. ANALISIS DE IMPORTANCIA DE FEATURES
+---------------------------------------
+Se genero un grafico de barras horizontales con la importancia de cada feature
+segun el mejor modelo. Tambien se creo un grafico scatter de "Predicho vs Real"
+para Total Alkalinity.
+
+
+5. ENTRENAMIENTO FINAL Y GENERACION DE PREDICCIONES
+-----------------------------------------------------
+Se reentrenaron 3 modelos de Random Forest (uno por cada target) usando:
+  - Todos los datos de entrenamiento (9319 filas, sin split).
+  - Los mejores hiperparametros del GridSearch.
+  - SimpleImputer con estrategia 'median' para manejar NaNs en validacion.
+
+Se alinearon las columnas del set de validacion (200 filas) con las del train,
+rellenando con 0 las basin dummies faltantes.
+
+Resultados en train (referencia de ajuste):
+  - Total Alkalinity:              R2 train = 0.9633, rango predicciones = [25.9, 242.1]
+  - Electrical Conductance:        R2 train = 0.9675, rango predicciones = [189.5, 774.9]
+  - Dissolved Reactive Phosphorus: R2 train = 0.9180, rango predicciones = [11.8, 51.0]
+
+El archivo de submission fue guardado en: submissions/submission_rf_v1.csv
+Formato: 200 filas con columnas Latitude, Longitude, Sample Date + 3 targets.
+
+
+6. LIMITACIONES Y OBSERVACIONES
+---------------------------------
+- El GridSearch se hizo solo sobre Total Alkalinity; los mismos hiperparametros
+  se reutilizaron para las otras dos variables target.
+- No se aplico tratamiento de outliers previo al entrenamiento.
+- Los R2 en train son altos (>0.91), lo cual podria indicar sobreajuste dado que
+  se entreno con todos los datos sin validacion cruzada en el paso final.
+- Este modelo fue posteriormente reemplazado por un ensemble optimizado con Optuna
+  (LightGBM + XGBoost + Random Forest) para mejorar el rendimiento.

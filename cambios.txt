@@ -71,4 +71,4 @@ Pipeline del último modelo (Ensemble + Optuna)
   4. Para DRP: considerá tratarlo con un modelo separado con features distintas, ya que tiene un comportamiento muy diferente
 
   En resumen: más features ≠ mejor modelo. El modelo anterior era más simple y generalizaba mejor. La mejora en CV era una ilusión: el modelo estaba memorizando patrones del training que no
-  existen en el test.
+  existen en el test. 
